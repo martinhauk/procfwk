@@ -131,9 +131,9 @@ namespace mrpaulandrew.azure.procfwk.Services
                     runResponse.RunId
                     );
 
-                _logger.LogInformation("Waiting for pipeline to start, current status: " + pipelineRun.Status);
-
-                if (pipelineRun.Status != "Queued")
+                _logger.LogInformation("Waiting for pipeline to complete, current status: " + pipelineRun.Status);
+        
+                if (pipelineRun.Status != "InProgress" && pipelineRun.Status != "Queued")
                     break;
                 Thread.Sleep(internalWaitDuration);
             }

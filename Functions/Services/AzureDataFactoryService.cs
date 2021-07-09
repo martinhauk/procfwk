@@ -96,21 +96,21 @@ namespace mrpaulandrew.azure.procfwk.Services
             //Wait and check for pipeline to start...
             PipelineRun pipelineRun;
             _logger.LogInformation("Checking ADF pipeline status.");
-            while (true)
-            {
-                pipelineRun = _adfManagementClient.PipelineRuns.Get
+                while (true)
+                {
+                    pipelineRun = _adfManagementClient.PipelineRuns.Get
                     (
-                    request.ResourceGroupName, 
+                    request.ResourceGroupName,
                     request.OrchestratorName,
                     runResponse.RunId
                     );
 
-                _logger.LogInformation("Waiting for pipeline to start, current status: " + pipelineRun.Status);
-
-                if (pipelineRun.Status != "Queued")
-                    break;
-                Thread.Sleep(internalWaitDuration);
-            }
+                    _logger.LogInformation("Waiting for pipeline to complete, current status: " + pipelineRun.Status);
+                  
+                    if (pipelineRun.Status != "InProgress" && pipelineRun.Status != "Queued")
+                        break;
+                   Thread.Sleep(internalWaitDuration);
+                }
 
             return new PipelineRunStatus()
             {
