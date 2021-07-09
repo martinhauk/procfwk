@@ -17,6 +17,11 @@ namespace mrpaulandrew.azure.procfwk.Helpers
             Body = new StreamReader(httpRequest.Body).ReadToEnd();
         }
 
+        public BodyReader(string httpRequestBody)
+        {
+            Body = httpRequestBody;
+        }
+
         public Task<PipelineRequest> GetRequestBody()
         {
             PipelineRequest request = JsonConvert.DeserializeObject<PipelineRequest>(Body);
