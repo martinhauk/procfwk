@@ -12,7 +12,8 @@ namespace mrpaulandrew.azure.procfwk.Services
 {
     public class AzureDataFactoryService : PipelineService
     {
-        private readonly DataFactoryManagementClient _adfManagementClient;
+        private readonly PipelineRequest _pipelineRequest;
+        private DataFactoryManagementClient _adfManagementClient;
         private readonly ILogger _logger;
 
         public AzureDataFactoryService(PipelineRequest request, ILogger logger)
@@ -20,17 +21,8 @@ namespace mrpaulandrew.azure.procfwk.Services
             _logger = logger;
             _logger.LogInformation("Creating ADF connectivity clients.");
 
-            //Auth details
-            var context = new AuthenticationContext("https://login.windows.net/" + request.TenantId);
-            var cc = new ClientCredential(request.ApplicationId, request.AuthenticationKey);
-            var result = context.AcquireTokenAsync("https://management.azure.com/", cc).Result;
-            var cred = new TokenCredentials(result.AccessToken);
-
-            //Management Client
-            _adfManagementClient = new DataFactoryManagementClient(cred)
-            {
-                SubscriptionId = request.SubscriptionId
-            };
+            _pipelineRequest = request;
+            ReinitAdfManagementClient();
         }
 
         public override PipelineDescription ValidatePipeline(PipelineRequest request)
@@ -41,11 +33,11 @@ namespace mrpaulandrew.azure.procfwk.Services
             {
                 var pipelineResource = _adfManagementClient.Pipelines.Get
                     (
-                    request.ResourceGroupName, 
-                    request.OrchestratorName, 
+                    request.ResourceGroupName,
+                    request.OrchestratorName,
                     request.PipelineName
                     );
-                
+
                 _logger.LogInformation(pipelineResource.Id.ToString());
 
                 return new PipelineDescription()
@@ -85,9 +77,9 @@ namespace mrpaulandrew.azure.procfwk.Services
 
             var runResponse = _adfManagementClient.Pipelines.CreateRunWithHttpMessagesAsync
                 (
-                request.ResourceGroupName, 
-                request.OrchestratorName, 
-                request.PipelineName, 
+                request.ResourceGroupName,
+                request.OrchestratorName,
+                request.PipelineName,
                 parameters: request.ParametersAsObjects
                 ).Result.Body;
 
@@ -96,21 +88,23 @@ namespace mrpaulandrew.azure.procfwk.Services
             //Wait and check for pipeline to start...
             PipelineRun pipelineRun;
             _logger.LogInformation("Checking ADF pipeline status.");
-                while (true)
-                {
-                    pipelineRun = _adfManagementClient.PipelineRuns.Get
-                    (
-                    request.ResourceGroupName,
-                    request.OrchestratorName,
-                    runResponse.RunId
-                    );
+            while (true)
+            {
+                pipelineRun = _adfManagementClient.PipelineRuns.Get
+                (
+                request.ResourceGroupName,
+                request.OrchestratorName,
+                runResponse.RunId
+                );
 
-                    _logger.LogInformation("Waiting for pipeline to complete, current status: " + pipelineRun.Status);
-                  
-                    if (pipelineRun.Status != "InProgress" && pipelineRun.Status != "Queued")
-                        break;
-                   Thread.Sleep(internalWaitDuration);
-                }
+                _logger.LogInformation("Waiting for pipeline to complete, current status: " + pipelineRun.Status);
+
+                if (pipelineRun.Status != "InProgress" && pipelineRun.Status != "Queued")
+                    break;
+                Thread.Sleep(internalWaitDuration);
+
+                ReinitAdfManagementClient();
+            }
 
             return new PipelineRunStatus()
             {
@@ -187,8 +181,8 @@ namespace mrpaulandrew.azure.procfwk.Services
             PipelineRun pipelineRun;
             pipelineRun = _adfManagementClient.PipelineRuns.Get
                 (
-                request.ResourceGroupName, 
-                request.OrchestratorName, 
+                request.ResourceGroupName,
+                request.OrchestratorName,
                 request.RunId
                 );
 
@@ -213,8 +207,8 @@ namespace mrpaulandrew.azure.procfwk.Services
         {
             PipelineRun pipelineRun = _adfManagementClient.PipelineRuns.Get
                 (
-                request.ResourceGroupName, 
-                request.OrchestratorName, 
+                request.ResourceGroupName,
+                request.OrchestratorName,
                 request.RunId
                 );
 
@@ -224,16 +218,16 @@ namespace mrpaulandrew.azure.procfwk.Services
             _logger.LogInformation("Create pipeline Activity Runs query filters.");
             RunFilterParameters filterParams = new RunFilterParameters
                 (
-                request.ActivityQueryStart, 
+                request.ActivityQueryStart,
                 request.ActivityQueryEnd
                 );
 
             _logger.LogInformation("Querying ADF pipeline for Activity Runs.");
             ActivityRunsQueryResponse queryResponse = _adfManagementClient.ActivityRuns.QueryByPipelineRun
                 (
-                request.ResourceGroupName, 
-                request.OrchestratorName, 
-                request.RunId, 
+                request.ResourceGroupName,
+                request.OrchestratorName,
+                request.RunId,
                 filterParams
                 );
 
@@ -284,6 +278,22 @@ namespace mrpaulandrew.azure.procfwk.Services
         public override void Dispose()
         {
             _adfManagementClient?.Dispose();
+        }
+
+        private void ReinitAdfManagementClient() //TODO: currently only needed for Excecure Pipeline because that's the only function running durable/long enough to have an expired Token that needs reaquisition
+        {
+
+            //Auth details
+            var context = new AuthenticationContext("https://login.windows.net/" + _pipelineRequest.TenantId);
+            var cc = new ClientCredential(_pipelineRequest.ApplicationId, _pipelineRequest.AuthenticationKey);
+            var result = context.AcquireTokenAsync("https://management.azure.com/", cc).Result;
+            var cred = new TokenCredentials(result.AccessToken);
+
+            //Management Client
+            _adfManagementClient = new DataFactoryManagementClient(cred)
+            {
+                SubscriptionId = _pipelineRequest.SubscriptionId
+            };
         }
     }
 }
