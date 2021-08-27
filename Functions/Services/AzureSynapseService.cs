@@ -16,19 +16,27 @@ namespace mrpaulandrew.azure.procfwk.Services
 {
     public class AzureSynapseService : PipelineService
     {
-        private readonly PipelineRequest _pipelineRequest;
-        private SynapseManagementClient _synManagementClient;
+        private readonly SynapseManagementClient _synManagementClient;
         private readonly PipelineClient _pipelineClient;
         private readonly PipelineRunClient _pipelineRunClient;
         private readonly ILogger _logger;
-        
+
         public AzureSynapseService(PipelineRequest request, ILogger logger)
         {
             _logger = logger;
             _logger.LogInformation("Creating SYN connectivity clients.");
 
-            _pipelineRequest = request;
-            ReinitSynapseManagementClient();
+            //Auth details
+            var context = new AuthenticationContext("https://login.windows.net/" + request.TenantId);
+            var cc = new ClientCredential(request.ApplicationId, request.AuthenticationKey);
+            var result = context.AcquireTokenAsync("https://management.azure.com/", cc).Result;
+            var cred = new TokenCredentials(result.AccessToken);
+
+            //Management Client
+            _synManagementClient = new SynapseManagementClient(cred)
+            {
+                SubscriptionId = request.SubscriptionId
+            };
 
             //Pipeline Clients
             Uri synapseDevEndpoint = new Uri("https://" + request.OrchestratorName.ToLower() + ".dev.azuresynapse.net");
@@ -76,7 +84,7 @@ namespace mrpaulandrew.azure.procfwk.Services
                     PipelineId = "Unknown",
                     PipelineType = "Unknown",
                     ActivityCount = 0
-                }; 
+                };
             }
             catch (Azure.RequestFailedException) //expected exception when pipeline doesnt exist
             {
@@ -124,12 +132,10 @@ namespace mrpaulandrew.azure.procfwk.Services
                     );
 
                 _logger.LogInformation("Waiting for pipeline to complete, current status: " + pipelineRun.Status);
-        
+
                 if (pipelineRun.Status != "InProgress" && pipelineRun.Status != "Queued")
                     break;
                 Thread.Sleep(internalWaitDuration);
-
-                ReinitSynapseManagementClient();
             }
 
             return new PipelineRunStatus()
@@ -290,21 +296,6 @@ namespace mrpaulandrew.azure.procfwk.Services
             _synManagementClient?.Dispose();
             //_pipelineClient?.Dispose(); not yet supported
             //_pipelineRunClient?.Dispose(); not yet supported
-        }
-
-        private void ReinitSynapseManagementClient() //TODO: currently only needed for Excecure Pipeline because that's the only function running durable/long enough to have an expired Token that needs reaquisition
-        {
-            //Auth details
-            var context = new AuthenticationContext("https://login.windows.net/" + _pipelineRequest.TenantId);
-            var cc = new ClientCredential(_pipelineRequest.ApplicationId, _pipelineRequest.AuthenticationKey);
-            var result = context.AcquireTokenAsync("https://management.azure.com/", cc).Result;
-            var cred = new TokenCredentials(result.AccessToken);
-
-            //Management Client
-            _synManagementClient = new SynapseManagementClient(cred)
-            {
-                SubscriptionId = _pipelineRequest.SubscriptionId
-            };
         }
     }
 }
