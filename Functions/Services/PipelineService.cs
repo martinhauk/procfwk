@@ -21,7 +21,7 @@ namespace mrpaulandrew.azure.procfwk.Services
 
         public abstract PipelineDescription ValidatePipeline(PipelineRequest request);
 
-        public abstract PipelineRunStatus ExecutePipeline(PipelineRequest request);
+        public abstract PipelineRunStatus StartPipeline(PipelineRequest request);
 
         public abstract PipelineRunStatus CancelPipeline(PipelineRunRequest request);
 

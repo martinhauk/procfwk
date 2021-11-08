@@ -68,7 +68,7 @@ namespace mrpaulandrew.azure.procfwk.Services
             }
         }
 
-        public override PipelineRunStatus ExecutePipeline(PipelineRequest request)
+        public override PipelineRunStatus StartPipeline(PipelineRequest request)
         {
             if (request.PipelineParameters == null)
                 _logger.LogInformation("Calling pipeline without parameters.");
@@ -85,26 +85,14 @@ namespace mrpaulandrew.azure.procfwk.Services
 
             _logger.LogInformation("Pipeline run ID: " + runResponse.RunId);
 
-            //Wait and check for pipeline to start...
-            PipelineRun pipelineRun;
-            _logger.LogInformation("Checking ADF pipeline status.");
-            while (true)
-            {
-                pipelineRun = _adfManagementClient.PipelineRuns.Get
-                (
-                request.ResourceGroupName,
-                request.OrchestratorName,
-                runResponse.RunId
-                );
+            PipelineRun pipelineRun = _adfManagementClient.PipelineRuns.Get
+            (
+            request.ResourceGroupName,
+            request.OrchestratorName,
+            runResponse.RunId
+            );
 
-                _logger.LogInformation("Waiting for pipeline to complete, current status: " + pipelineRun.Status);
-
-                if (pipelineRun.Status != "InProgress" && pipelineRun.Status != "Queued")
-                    break;
-                Thread.Sleep(internalWaitDuration);
-
-                ReinitAdfManagementClient();
-            }
+            _logger.LogInformation("Waiting for pipeline to complete, current status: " + pipelineRun.Status);
 
             return new PipelineRunStatus()
             {

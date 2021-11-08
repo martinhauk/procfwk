@@ -23,5 +23,19 @@ namespace mrpaulandrew.azure.procfwk.Helpers
             //other validation
             if (!CheckGuid(RunId)) ReportInvalidBody(logger, "Expected Run Id to be a GUID.");
         }
+
+        public PipelineRunRequest(PipelineRequest request)
+        {
+            TenantId = request?.TenantId;
+            ApplicationId = request?.ApplicationId;
+            AuthenticationKey = request?.AuthenticationKey;
+            SubscriptionId = request?.SubscriptionId;
+            ResourceGroupName = request?.ResourceGroupName;
+            OrchestratorType = request?.OrchestratorType;
+            OrchestratorName = request?.OrchestratorName;
+            PipelineName = request?.PipelineName;
+            OrchestratorType = request?.OrchestratorType;
+            PipelineParameters = request?.PipelineParameters;
+        }
     }
 }
