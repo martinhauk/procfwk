@@ -13,25 +13,24 @@ namespace mrpaulandrew.azure.procfwk.Functions
     public static class DurableExecutePipeline
     {
         private const int internalWaitDuration = 5; //s
-        private const string pipelineStartedEventName = "PipelineStartedEvent";
 
         #region Start
 
         [FunctionName("DurableExecutePipeline_Orchestrator_Start")]
-        public static async Task DurableExecutePipeline_Orchestrator_Start(
+        public static async Task<string> DurableExecutePipeline_Orchestrator_Start(
             [OrchestrationTrigger] IDurableOrchestrationContext context,
             [DurableClient] IDurableOrchestrationClient client,
             ILogger logger)
         {
-            var request = context.GetInput<PipelineRequestDTO>();
+            var request = context.GetInput<PipelineRequest>();
+
+            logger.LogInformation("DurableExecutePipeline_Orchestrator_Start - calling Activity to start pipeline '{pipelineName}'", request.PipelineName);
 
             var startResponse = await context.CallActivityAsync<PipelineRunStatus>("DurableExecutePipeline_ActivityFunction_Start", request);
 
-            await client.RaiseEventAsync(request.CheckOrchestratorInstanceId, pipelineStartedEventName, startResponse);
+            logger.LogInformation("DurableExecutePipeline_Orchestrator_Start - started pipeline '{pipelineName}' with run id '{runId}'", request.PipelineName, startResponse.RunId);
 
-            logger.LogInformation("DurableExecutePipeline_Orchestrator_Start - sending event for pipeline '{pipelineName}' to instance '{instanceIdCheck}'", request.PipelineName, request.CheckOrchestratorInstanceId);
-
-            context.SetOutput(startResponse);
+            return startResponse.RunId;
         }
 
         [FunctionName("DurableExecutePipeline_ActivityFunction_Start")]
@@ -62,20 +61,9 @@ namespace mrpaulandrew.azure.procfwk.Functions
             [OrchestrationTrigger] IDurableOrchestrationContext context,
             ILogger logger)
         {
-            logger.LogInformation("DurableExecutePipeline_Orchestrator_Check function waiting for event...");
+            var request = context.GetInput<PipelineRunRequest>();
 
-            var startResponse = await context.WaitForExternalEvent<PipelineRunStatus>(pipelineStartedEventName);
-
-            logger.LogInformation("DurableExecutePipeline_Orchestrator_Check received event, monitoring pipeline run '{runId}'", startResponse.RunId);
-
-            var request = context.GetInput<PipelineRequest>();
-
-            var runRequest = new PipelineRunRequest(request)
-            {
-                RunId = startResponse.RunId,
-                OrchestratorName = request.OrchestratorName,
-                ResourceGroupName = request.ResourceGroupName
-            };
+            logger.LogInformation("DurableExecutePipeline_Orchestrator_Check - monitoring pipeline '{pipelineName}' with run id '{runId}'", request.PipelineName, request.RunId);
 
             PipelineRunStatus result;
             do
@@ -83,11 +71,11 @@ namespace mrpaulandrew.azure.procfwk.Functions
                 var nextCheck = context.CurrentUtcDateTime.AddSeconds(internalWaitDuration);
                 await context.CreateTimer(nextCheck, CancellationToken.None);
 
-                result = await context.CallActivityAsync<PipelineRunStatus>("DurableExecutePipeline_ActivityFunction_Check", runRequest);
+                result = await context.CallActivityAsync<PipelineRunStatus>("DurableExecutePipeline_ActivityFunction_Check", request);
 
             } while (result.ActualStatus == "InProgress" || result.ActualStatus == "Queued");
 
-            logger.LogInformation("Pipeline run '{runId}' has finished with status '{pipelineStatus}'", startResponse.RunId, result.ActualStatus);
+            logger.LogInformation("DurableExecutePipeline_Orchestrator_Check - Pipeline '{pipelineName}' with run id '{runId}' has finished with status '{pipelineStatus}'", request.PipelineName, request.RunId, result.ActualStatus);
 
             context.SetOutput(result);
         }
@@ -97,10 +85,9 @@ namespace mrpaulandrew.azure.procfwk.Functions
             [ActivityTrigger] PipelineRunRequest request,
             ILogger logger)
         {
-            logger.LogInformation("ActivityFunction - checking on pipeline '{pipelineName}'", request.PipelineName);
+            logger.LogInformation("DurableExecutePipeline_ActivityFunction_Check - checking on pipeline '{pipelineName}' with run id '{runId}'", request.PipelineName, request.RunId);
 
             request.Validate(logger);
-
 
             PipelineRunStatus result;
             using (var service = PipelineService.GetServiceForRequest(request, logger))
@@ -108,12 +95,38 @@ namespace mrpaulandrew.azure.procfwk.Functions
                 result = service.GetPipelineRunStatus(request);
             }
 
-            logger.LogInformation("ActivityFunction - done checking on pipeline '{pipelineName}'", request.PipelineName);
+            logger.LogInformation("DurableExecutePipeline_ActivityFunction_Check - checked pipeline '{pipelineName}' with run id '{runId}'. Status: '{status}'", request.PipelineName, request.RunId, result.ActualStatus);
 
             return result;
         }
 
         #endregion Check
+
+        #region Main Orchestrator
+
+        [FunctionName("DurableExecutePipeline_MainOrchestrator")]
+        public static async Task DurableExecutePipeline_MainOrchestrator(
+            [OrchestrationTrigger] IDurableOrchestrationContext context,
+            ILogger logger)
+        {
+            var pipelineRequest = context.GetInput<PipelineRequest>();
+
+            logger.LogInformation("DurableExecutePipeline_MainOrchestrator - starting orchestrator for start of pipeline '{pipelineName}'", pipelineRequest.PipelineName);
+
+            string runId = await context.CallSubOrchestratorAsync<string>("DurableExecutePipeline_Orchestrator_Start", pipelineRequest);
+
+            logger.LogInformation("DurableExecutePipeline_MainOrchestrator - pipeline '{pipelineName}' and run id '{runId}' started. Starting orchestrator for cyclic check...", pipelineRequest.PipelineName, runId);
+
+            PipelineRunRequest pipelineRunRequest = new PipelineRunRequest(pipelineRequest) { RunId = runId };
+
+            var status = await context.CallSubOrchestratorAsync<PipelineRunStatus>("DurableExecutePipeline_Orchestrator_Check", pipelineRunRequest);
+
+            logger.LogInformation("DurableExecutePipeline_MainOrchestrator - finished for pipeline'{pipelineName}' with run id '{runId}'", pipelineRequest.PipelineName, runId);
+
+            context.SetOutput(status);
+        }
+
+        #endregion Main Orchestrator
 
         [FunctionName("DurableExecutePipeline_HttpStart")]
         public static async Task<HttpResponseMessage> HttpStart(
@@ -128,23 +141,13 @@ namespace mrpaulandrew.azure.procfwk.Functions
             string requestBodyAsString = await req.Content.ReadAsStringAsync();
             PipelineRequest pipelineRequest = await new BodyReader(requestBodyAsString).GetRequestBodyAsync();
 
-            logger.LogInformation("Handing over request to orchestrator DurableExecutePipeline.");
+            logger.LogInformation("DurableExecutePipeline_HttpStart - Handing over request for pipeline {pipelineName} to main orchestrator 'DurableExecutePipeline_MainOrchestrator'", pipelineRequest.PipelineName);
 
+            string instanceId = await starter.StartNewAsync("DurableExecutePipeline_MainOrchestrator", pipelineRequest);
 
+            logger.LogInformation("DurableExecutePipeline_HttpStart - Started main orchestrator 'DurableExecutePipeline_MainOrchestrator' with ID = '{instanceId}' for pipeline '{pipelineName}'.", instanceId, pipelineRequest.PipelineName);
 
-            string instanceIdCheck = await starter.StartNewAsync("DurableExecutePipeline_Orchestrator_Check", pipelineRequest);
-
-            logger.LogInformation("Started check orchestrator with ID = '{instanceIdCheck}' for pipeline '{pipelineName}'.", instanceIdCheck, pipelineRequest.PipelineName);
-
-
-
-            string instanceIdStart = await starter.StartNewAsync("DurableExecutePipeline_Orchestrator_Start", new PipelineRequestDTO(pipelineRequest, instanceIdCheck));
-
-            logger.LogInformation("Started start orchestrator with ID = '{instanceIdStart}' for pipeline '{pipelineName}'.", instanceIdStart, pipelineRequest.PipelineName);
-
-
-
-            return starter.CreateCheckStatusResponse(req, instanceIdCheck);
+            return starter.CreateCheckStatusResponse(req, instanceId);
         }
     }
 }
