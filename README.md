@@ -6,6 +6,10 @@
 
 For complete documentation on this solution see [procfwk.com](http://procfwk.com/).
 
+The changes done in this Fork:
+
+The ExecutePipeline Azure Funcion has been replaced. Instead of having a normal Azure Function that potentially runs into a timeout, we now have a durable Function that won't timeout if a pipeline runs longer than five minutes. The Pipeline that calls this function has also been altered to reflect these changes. The function call is still the same, but the result has to be handled differently as a durable function returns a Url that can be used to check it's status. The output that the old function would have created will be included in the Status Urls response.
+
 ## Framework Capabilities
 
  * Granular metadata control.
