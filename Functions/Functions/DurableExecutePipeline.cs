@@ -118,8 +118,28 @@ namespace mrpaulandrew.azure.procfwk.Functions
             logger.LogInformation("DurableExecutePipeline_MainOrchestrator - pipeline '{pipelineName}' and run id '{runId}' started. Starting orchestrator for cyclic check...", pipelineRequest.PipelineName, runId);
 
             PipelineRunRequest pipelineRunRequest = new PipelineRunRequest(pipelineRequest) { RunId = runId };
+            
+            var retryCount = 5;
+            PipelineRunStatus status = null;
+            for (int i = 0; i < retryCount; i++)
+            {
+                try
+                {
+                    status = await context.CallSubOrchestratorAsync<PipelineRunStatus>("DurableExecutePipeline_Orchestrator_Check", pipelineRunRequest);
+                }
+                catch (HttpRequestException e)
+                {
+                    logger.LogError(e, "DurableExecutePipeline_MainOrchestrator - Failed check on pipeline run {runId}. Retrying...", runId);
+                    await Task.Delay(10000);  
+                }             
 
-            var status = await context.CallSubOrchestratorAsync<PipelineRunStatus>("DurableExecutePipeline_Orchestrator_Check", pipelineRunRequest);
+                if (i == retryCount)
+                {
+                    var ex = new System.Exception($"DurableExecutePipeline_MainOrchestrator - Max retries exceeded for pipeline '{pipelineRequest.PipelineName}' with run id '{runId}'");
+                    logger.LogError(ex, "DurableExecutePipeline_MainOrchestrator - Max retries exceeded for pipeline '{pipelineRequest.PipelineName}' with run id '{runId}'", pipelineRequest.PipelineName,  runId);
+                    throw ex;
+                }
+            }
 
             logger.LogInformation("DurableExecutePipeline_MainOrchestrator - finished for pipeline'{pipelineName}' with run id '{runId}'", pipelineRequest.PipelineName, runId);
 
