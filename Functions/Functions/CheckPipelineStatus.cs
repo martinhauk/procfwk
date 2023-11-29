@@ -1,34 +1,36 @@
-using System;
-using System.IO;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Azure.WebJobs;
-using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using mrpaulandrew.azure.procfwk.Helpers;
 using mrpaulandrew.azure.procfwk.Services;
+using Newtonsoft.Json;
 
 namespace mrpaulandrew.azure.procfwk
 {
-    public static class CheckPipelineStatus
+    public class CheckPipelineStatus
     {
-        [FunctionName("CheckPipelineStatus")]
-        public static async Task<IActionResult> Run(
-            [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = null)] HttpRequest httpRequest,
-            ILogger logger)
+        private readonly ILogger _logger;
+
+        public CheckPipelineStatus(ILogger<CheckPipelineStatus> logger)
         {
-            logger.LogInformation("CheckPipelineStatus Function triggered by HTTP request.");
+            _logger = logger;
+        }
 
-            logger.LogInformation("Parsing body from request.");
+        [Function("CheckPipelineStatus")]
+        public async Task<IActionResult> Run(
+            [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = null)] HttpRequest httpRequest)
+        {
+            _logger.LogInformation("CheckPipelineStatus Function triggered by HTTP request.");
+            _logger.LogInformation("Parsing body from request.");
             PipelineRunRequest request = await new BodyReader(httpRequest).GetRunRequestBodyAsync();
-            request.Validate(logger);
+            request.Validate(_logger);
 
-            using (var service = PipelineService.GetServiceForRequest(request, logger))
+            using (var service = PipelineService.GetServiceForRequest(request, _logger))
             {
                 PipelineRunStatus result = service.GetPipelineRunStatus(request);
-                logger.LogInformation("CheckPipelineStatus Function complete.");
+                _logger.LogInformation("CheckPipelineStatus Function complete.");
                 return new OkObjectResult(JsonConvert.SerializeObject(result));
             }
         }

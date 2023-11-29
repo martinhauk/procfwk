@@ -1,30 +1,34 @@
 using System;
 using System.IO;
-using System.Threading.Tasks;
+using System.Linq;
 using System.Net.Mail;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Azure.WebJobs;
-using Microsoft.Azure.WebJobs.Extensions.Http;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using mrpaulandrew.azure.procfwk.Helpers;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using mrpaulandrew.azure.procfwk.Helpers;
-using System.Linq;
 
 namespace mrpaulandrew.azure.procfwk
 {
-    public static class SendEmail
+    public class SendEmail
     {
-        [FunctionName("SendEmail")]
-        public static async Task<IActionResult> Run(
-            [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req,
-            ILogger log)
-        {
-            log.LogInformation("SendEmail Function triggered by HTTP request.");
+        private readonly ILogger _logger;
 
+        public SendEmail(ILogger<SendEmail> logger)
+        {
+            _logger = logger;
+        }
+
+        [Function("SendEmail")]
+        public async Task<IActionResult> Run(
+            [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req)
+        {
+            _logger.LogInformation("SendEmail Function triggered by HTTP request.");
             #region ParseRequestBody
-            log.LogInformation("Parsing body from request.");
+            _logger.LogInformation("Parsing body from request.");
 
             string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             dynamic data = JsonConvert.DeserializeObject(requestBody);
@@ -43,11 +47,11 @@ namespace mrpaulandrew.azure.procfwk
             //Check for minimum mailing values in request body
             if (subject == null || message == null)
             {
-                log.LogInformation("Invalid body - Subject/Body.");
-                
+                _logger.LogInformation("Invalid body - Subject/Body.");
+
                 outputString = "{ \"EmailSent\": false, \"Details\": \"Email subject or body values missing.\"}";
                 outputJson = JObject.Parse(outputString);
-                
+
                 return new BadRequestObjectResult(outputJson);
             }
 
@@ -56,17 +60,16 @@ namespace mrpaulandrew.azure.procfwk
                 (string.IsNullOrEmpty(toRecipients) && string.IsNullOrEmpty(ccRecipients) && string.IsNullOrEmpty(bccRecipients))
                 )
             {
-                log.LogInformation("Invalid body - To/CC/BCC.");
-                
+                _logger.LogInformation("Invalid body - To/CC/BCC.");
+
                 outputString = "{ \"EmailSent\": false, \"Details\": \"No email recipients provided as To/CC/BCC.\"}";
                 outputJson = JObject.Parse(outputString);
-                
+
                 return new BadRequestObjectResult(outputJson);
             }
             #endregion
 
-            //Create email client
-            log.LogInformation("Creating smtp client.");
+            _logger.LogInformation("Creating smtp client.");
 
             using (var client = SMTPClient.CreateSMTPClient())
             {
@@ -100,16 +103,17 @@ namespace mrpaulandrew.azure.procfwk
                 if (!string.IsNullOrEmpty(toRecipients))
                 {
                     var allRecipients = toRecipients.Split(new[] { "," }, StringSplitOptions.RemoveEmptyEntries);
-                    
+
                     foreach (var toAddress in allRecipients)
                     {
                         mail.To.Add(toAddress);
                     }
-                    log.LogInformation("To Recipients Added: " + allRecipients.Count().ToString());
+
+                    _logger.LogInformation("To Recipients Added: " + allRecipients.Count().ToString());
                 }
                 else
                 {
-                    log.LogInformation("To Recipients Added: 0");
+                    _logger.LogInformation("To Recipients Added: 0");
                 }
 
                 //cc recipients
@@ -121,11 +125,12 @@ namespace mrpaulandrew.azure.procfwk
                     {
                         mail.CC.Add(ccAddress);
                     }
-                    log.LogInformation("CC Recipients Added: " + allCcRecipients.Count().ToString());
+
+                    _logger.LogInformation("CC Recipients Added: " + allCcRecipients.Count().ToString());
                 }
                 else
                 {
-                    log.LogInformation("CC Recipients Added: 0");
+                    _logger.LogInformation("CC Recipients Added: 0");
                 }
 
                 //bcc recipients
@@ -137,44 +142,41 @@ namespace mrpaulandrew.azure.procfwk
                     {
                         mail.Bcc.Add(bccAddress);
                     }
-                    log.LogInformation("BCC Recipients Added: " + allBccRecipients.Count().ToString());
+
+                    _logger.LogInformation("BCC Recipients Added: " + allBccRecipients.Count().ToString());
                 }
                 else
                 {
-                    log.LogInformation("BCC Recipients Added: 0");
+                    _logger.LogInformation("BCC Recipients Added: 0");
                 }
                 #endregion
 
                 #region SendEmail
                 try
                 {
-                    log.LogInformation("Sending email.");
+                    _logger.LogInformation("Sending email.");
 
                     client.Send(mail);
                     outputString = "{ \"EmailSent\": true }";
-
-                    log.LogInformation("Sent email.");
+                    _logger.LogInformation("Sent email.");
                 }
                 catch (SmtpException smtpEx)
                 {
                     outputString = "{ \"EmailSent\": false, \"Details\": \"SMTP exception caught and logged to error output.\"}";
-
-                    log.LogError(smtpEx.Message);
-                    log.LogInformation("Message has not been sent. Check Azure Function Logs for more information.");
+                    _logger.LogError(smtpEx.Message);
+                    _logger.LogInformation("Message has not been sent. Check Azure Function Logs for more information.");
                 }
                 catch (Exception ex)
                 {
                     outputString = "{ \"EmailSent\": false, \"Details\": \"Other exception caught and logged to error output.\"}";
-
-                    log.LogError(ex.Message);
-                    log.LogInformation("Message has not been sent. Check Azure Function Logs for more information.");
+                    _logger.LogError(ex.Message);
+                    _logger.LogInformation("Message has not been sent. Check Azure Function Logs for more information.");
                 }
                 #endregion
             }
 
             outputJson = JObject.Parse(outputString);
-
-            log.LogInformation("SendEmail Function complete.");
+            _logger.LogInformation("SendEmail Function complete.");
             return new OkObjectResult(outputJson);
         }
     }
