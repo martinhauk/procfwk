@@ -13,7 +13,7 @@
     <PackageReference Include="Microsoft.Azure.Management.DataFactory" Version="9.3.0" />
     <PackageReference Include="Microsoft.Azure.Management.ResourceManager" Version="3.10.1-preview" />
     <PackageReference Include="Microsoft.Azure.Management.Synapse" Version="2.0.0" />
-    <PackageReference Include="Microsoft.IdentityModel.Clients.ActiveDirectory" Version="5.3.0" />
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.60.1" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.1.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="1.17.2" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="1.21.0" />
