@@ -15,7 +15,7 @@ namespace mrpaulandrew.azure.procfwk.Helpers
         public string PipelineName { get; set; }
         public PipelineServiceType? OrchestratorType { get; set; }
 
-        public Dictionary<string, string> PipelineParameters;
+        public Dictionary<string, string> PipelineParameters { get; set; }
 
         public virtual void Validate(ILogger logger)
         {

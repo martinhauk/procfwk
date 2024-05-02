@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using Newtonsoft.Json;
 using Microsoft.Rest;
 using Microsoft.Extensions.Logging;
-using Microsoft.IdentityModel.Clients.ActiveDirectory;
+using Microsoft.Identity.Client;
 using Microsoft.Azure.Management.Synapse;
 using Azure.Core;
 using Azure.Identity;
@@ -27,10 +27,17 @@ namespace mrpaulandrew.azure.procfwk.Services
             _logger.LogInformation("Creating SYN connectivity clients.");
 
             //Auth details
-            var context = new AuthenticationContext("https://login.windows.net/" + request.TenantId);
-            var cc = new ClientCredential(request.ApplicationId, request.AuthenticationKey);
-            var result = context.AcquireTokenAsync("https://management.azure.com/", cc).Result;
-            var cred = new TokenCredentials(result.AccessToken);
+            var app = ConfidentialClientApplicationBuilder.Create(request.ApplicationId)
+              .WithClientSecret(request.AuthenticationKey)
+              .WithTenantId(request.TenantId)
+              .Build();
+
+            var accessToken = app.AcquireTokenForClient(new string[] { "https://management.azure.com/.default" })
+              .ExecuteAsync()
+              .Result
+              .AccessToken;
+
+            var cred = new TokenCredentials(accessToken);
 
             //Management Client
             _synManagementClient = new SynapseManagementClient(cred)

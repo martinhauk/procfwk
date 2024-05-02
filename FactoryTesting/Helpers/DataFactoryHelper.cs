@@ -1,11 +1,10 @@
 ﻿using Microsoft.Azure.Management.DataFactory;
 using Microsoft.Azure.Management.DataFactory.Models;
-using Microsoft.IdentityModel.Clients.ActiveDirectory;
+using Microsoft.Identity.Client;
 using Microsoft.Rest;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -22,11 +21,17 @@ namespace FactoryTesting.Helpers
             if (_adfClient != null)
                 return;
 
-            var context = new AuthenticationContext("https://login.windows.net/" + GetSetting("AZURE_TENANT_ID"));
-            var cc = new ClientCredential(GetSetting("AZURE_CLIENT_ID"), GetSetting("AZURE_CLIENT_SECRET"));
-            var authResult = await context.AcquireTokenAsync("https://management.azure.com/", cc);
+            var app = ConfidentialClientApplicationBuilder.Create(GetSetting("AZURE_CLIENT_ID"))
+              .WithClientSecret(GetSetting("AZURE_CLIENT_SECRET"))
+              .WithTenantId(GetSetting("AZURE_TENANT_ID"))
+              .Build();
 
-            var cred = new TokenCredentials(authResult.AccessToken);
+            var accessToken = app.AcquireTokenForClient(new string[] { "https://management.azure.com/.default" })
+              .ExecuteAsync()
+              .Result
+              .AccessToken;
+
+            var cred = new TokenCredentials(accessToken);
             _adfClient = new DataFactoryManagementClient(cred) { SubscriptionId = GetSetting("AZURE_SUBSCRIPTION_ID") };
         }
 

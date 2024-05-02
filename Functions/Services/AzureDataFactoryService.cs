@@ -3,7 +3,7 @@ using System.Threading;
 using Newtonsoft.Json;
 using Microsoft.Rest;
 using Microsoft.Extensions.Logging;
-using Microsoft.IdentityModel.Clients.ActiveDirectory;
+using Microsoft.Identity.Client;
 using Microsoft.Azure.Management.DataFactory;
 using Microsoft.Azure.Management.DataFactory.Models;
 using mrpaulandrew.azure.procfwk.Helpers;
@@ -268,14 +268,22 @@ namespace mrpaulandrew.azure.procfwk.Services
             _adfManagementClient?.Dispose();
         }
 
-        private void ReinitAdfManagementClient() //TODO: currently only needed for Excecure Pipeline because that's the only function running durable/long enough to have an expired Token that needs reaquisition
+        private void ReinitAdfManagementClient() //TODO: currently only needed for Excecute Pipeline because that's the only function running durable/long enough to have an expired Token that needs reaquisition
         {
 
             //Auth details
-            var context = new AuthenticationContext("https://login.windows.net/" + _pipelineRequest.TenantId);
-            var cc = new ClientCredential(_pipelineRequest.ApplicationId, _pipelineRequest.AuthenticationKey);
-            var result = context.AcquireTokenAsync("https://management.azure.com/", cc).Result;
-            var cred = new TokenCredentials(result.AccessToken);
+            var app = ConfidentialClientApplicationBuilder.Create(_pipelineRequest.ApplicationId)
+                .WithClientSecret(_pipelineRequest.AuthenticationKey)
+                .WithTenantId(_pipelineRequest.TenantId)
+                .Build();
+
+            var accessToken = app.AcquireTokenForClient(new string[] { "https://management.azure.com/.default" })
+                .ExecuteAsync()
+                .Result
+                .AccessToken;
+
+
+            var cred = new TokenCredentials(accessToken);
 
             //Management Client
             _adfManagementClient = new DataFactoryManagementClient(cred)

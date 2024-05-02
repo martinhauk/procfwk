@@ -37,5 +37,10 @@ namespace mrpaulandrew.azure.procfwk.Helpers
             OrchestratorType = request?.OrchestratorType;
             PipelineParameters = request?.PipelineParameters;
         }
+
+        public PipelineRunRequest()
+        {
+                
+        }
     }
 }
